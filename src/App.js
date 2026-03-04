@@ -4,8 +4,13 @@ const API = 'https://localhost:7134';
 const COLORS = ['','#0d6efd','#198754','#dc3545','#6f42c1','#fd7e14','#20c997','#000','#6c757d'];
 
 function Cell({ row, col, state, onOpen, onFlag, gameOver }) {
-  const handleClick = () => { if (!gameOver && state.status === 'closed') onOpen(row, col); };
-  const handleRight = (e) => { e.preventDefault(); if (!gameOver) onFlag(row, col); };
+  const handleClick = () => {
+    if (!gameOver && state.status === 'closed') onOpen(row, col);
+  };
+  const handleRight = (e) => {
+    e.preventDefault();
+    if (!gameOver) onFlag(row, col);
+  };
 
   let bgClass = 'bg-secondary';
   let content = '';
@@ -119,7 +124,7 @@ function HistoryModal({ onClose, onResume }) {
                     <td>{g.rows}×{g.cols}</td>
                     <td>{g.minesCount}</td>
                     <td>{statusBadge(g.status)}</td>
-                    <td className="text-muted small d-none d-sm-table-cell">{new Date(g.createdAt).toLocaleString('uk-UA')}</td>
+                    <td className="text-muted small d-none d-sm-table-cell">{(g.createdAt)}</td>
                     <td>
                       {g.status === 'playing' && (
                         <button className="btn btn-sm btn-outline-primary" onClick={() => onResume(g.code)}>
@@ -172,23 +177,40 @@ export default function Minesweeper() {
 
   const buildCells = (r, c) => {
     const grid = {};
-    for (let i = 0; i < r; i++) { grid[i] = {}; for (let j = 0; j < c; j++) grid[i][j] = { status: 'closed' }; }
+    for (let i = 0; i < r; i++) { 
+      grid[i] = {}; 
+      for (let j = 0; j < c; j++) 
+        grid[i][j] = { status: 'closed' }; 
+    }
     return grid;
   };
 
   const applyOpened = (grid, openedArr) => {
-    openedArr.forEach(o => { if (grid[o.row]) grid[o.row][o.col] = { status: 'open', number: o.number }; });
+    openedArr.forEach(o => { 
+      if (grid[o.row]) 
+        grid[o.row][o.col] = { 
+          status: 'open', 
+          number: o.number 
+        }; 
+      });
   };
 
   const applyFlags = (grid, flagsArr) => {
-    flagsArr.forEach(f => { if (grid[f.row] && grid[f.row][f.col]?.status === 'closed') grid[f.row][f.col] = { status: 'flag' }; });
+    flagsArr.forEach(f => { 
+      if (grid[f.row] && grid[f.row][f.col]?.status === 'closed') 
+        grid[f.row][f.col] = { 
+          status: 'flag' 
+        }; 
+      });
   };
 
   const applyMines = (grid, minesArr, lost) => {
     minesArr?.forEach(m => {
       if (grid[m.row]) {
         const cur = grid[m.row][m.col];
-        grid[m.row][m.col] = { status: lost && cur?.status !== 'flag' ? 'mine' : 'mine-safe' };
+        grid[m.row][m.col] = { 
+          status: lost && cur?.status !== 'flag' ? 'mine' : 'mine-safe' 
+        };
       }
     });
   };
@@ -201,7 +223,7 @@ export default function Minesweeper() {
     setGameRows(data.rows);
     setGameCols(data.cols);
     setFlagsLeft(data.minesCount);
-    setGameStatus('playing');
+    setGameStatus(data.status);
     setCells(buildCells(data.rows, data.cols));
     setTimer(0);
     setLoading(false);
@@ -227,13 +249,22 @@ export default function Minesweeper() {
   }, []);
 
   const handleOpen = async (row, col) => {
+    if (gameStatus !== 'playing' && gameStatus !== 'waiting') return;
+
     const res = await fetch(`${API}/Minesweeper/${code}/open`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ row, col, player: 'player1' })
     });
-    const data = await res.json();
 
+    if (!res.ok) {
+      const text = await res.text();
+      console.warn('Server error:', text);
+      return;
+    }
+
+    const data = await res.json();
+    setGameStatus(data.status);
     setCells(prev => {
       const grid = JSON.parse(JSON.stringify(prev));
       data.newOpened?.forEach(o => { grid[o.row][o.col] = { status: 'open', number: o.number }; });
@@ -244,6 +275,7 @@ export default function Minesweeper() {
   };
 
   const handleFlag = async (row, col) => {
+    if (gameStatus !== 'playing') return;
     const res = await fetch(`${API}/Minesweeper/${code}/flag`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -352,7 +384,7 @@ export default function Minesweeper() {
                         cells={cells}
                         onOpen={handleOpen}
                         onFlag={handleFlag}
-                        gameOver={gameStatus !== 'playing'}
+                        gameOver={gameStatus !== 'playing' && gameStatus !== 'waiting'}
                       />
                     </div>
                   </div>
