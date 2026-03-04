@@ -1,283 +1,377 @@
-import './App.css';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const API = 'https://localhost:7134';
+const COLORS = ['','#0d6efd','#198754','#dc3545','#6f42c1','#fd7e14','#20c997','#000','#6c757d'];
 
-function Pagination({ page, pagesCount, onPageChange, pageSize, onPageSizeChange, totalCount }) {
-  const pages = [];
-  for (let i = 1; i <= pagesCount; i++) pages.push(i);
+function Cell({ row, col, state, onOpen, onFlag, gameOver }) {
+  const handleClick = () => { if (!gameOver && state.status === 'closed') onOpen(row, col); };
+  const handleRight = (e) => { e.preventDefault(); if (!gameOver) onFlag(row, col); };
 
-  return (
-    <div className="mt-4 pt-3 border-top">
-      <nav aria-label="Page navigation">
-        <ul className="pagination pagination-lg justify-content-center">
-          <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
-            <button className="page-link" onClick={() => onPageChange(page - 1)}>Previous</button>
-          </li>
-          {pages.map(p => (
-            <li key={p} className={`page-item ${p === page ? 'active' : ''}`}>
-              <button className="page-link" onClick={() => onPageChange(p)}>{p}</button>
-            </li>
-          ))}
-          <li className={`page-item ${page === pagesCount ? 'disabled' : ''}`}>
-            <button className="page-link" onClick={() => onPageChange(page + 1)}>Next</button>
-          </li>
-        </ul>
-      </nav>
+  let bgClass = 'bg-secondary';
+  let content = '';
+  let colorStyle = {};
 
-      <div className="d-flex justify-content-between align-items-center mt-4 px-2">
-        <div className="d-flex align-items-center gap-3">
-          <label htmlFor="pageSize" className="form-label mb-0 fw-semibold">Rows per page:</label>
-          <select
-            id="pageSize"
-            className="form-select form-select-sm"
-            style={{ width: '80px' }}
-            value={pageSize}
-            onChange={e => onPageSizeChange(Number(e.target.value))}
-          >
-            {[1, 5, 10, 20, 30, 50].map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-        <span className="text-secondary fw-semibold">
-          {totalCount === 0 ? '0' : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalCount)} of {totalCount}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Table({ items, onDelete }) {
-  if (!items || items.length === 0) {
-    return (
-      <div className="text-center py-5 text-muted">
-        <p className="fs-5">No data available</p>
-      </div>
-    );
+  if (state.status === 'open') {
+    bgClass = 'bg-light';
+    content = state.number > 0 ? state.number : '';
+    if (state.number > 0) {
+      colorStyle.color = COLORS[state.number] || '#000';
+      colorStyle.fontWeight = 'bold';
+    }
+  } else if (state.status === 'flag') {
+    bgClass = 'bg-secondary';
+    content = '🚩';
+  } else if (state.status === 'mine') {
+    bgClass = 'bg-danger';
+    content = '💣';
+  } else if (state.status === 'mine-safe') {
+    bgClass = 'bg-light';
+    content = '💣';
+    colorStyle.opacity = 0.4;
   }
+
   return (
-    <div className="table-responsive">
-      <table className="table table-hover align-middle table-striped">
-        <thead className="table-dark sticky-top">
-          <tr>
-            <th className="text-center" style={{ width: '60px' }}>ID</th>
-            <th>Full Name</th>
-            <th>Department</th>
-            <th className="text-end">Salary</th>
-            <th className="text-end">Bonus</th>
-            <th>Specializations</th>
-            <th className="text-center" style={{ width: '200px' }}>Actions</th>
+    <td
+      onClick={handleClick}
+      onContextMenu={handleRight}
+      className={`${bgClass} border`}
+      style={{
+        width: 40, height: 40,
+        cursor: gameOver ? 'default' : 'pointer',
+        userSelect: 'none',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+        fontSize: '1rem',
+        fontWeight: '500',
+        boxShadow: state.status === 'closed' ? 'inset 0 1px 3px rgba(0,0,0,0.3), inset 0 -1px 0 rgba(255,255,255,0.2)' : 'none',
+        ...colorStyle
+      }}
+    >
+      {content}
+    </td>
+  );
+}
+
+function Board({ rows, cols, cells, onOpen, onFlag, gameOver }) {
+  return (
+    <table className="table-bordered" style={{ borderCollapse: 'collapse', margin: '0 auto' }}>
+      <tbody>
+        {Array.from({ length: rows }, (_, r) => (
+          <tr key={r}>
+            {Array.from({ length: cols }, (_, c) => (
+              <Cell
+                key={c}
+                row={r} col={c}
+                state={cells[r]?.[c] || { status: 'closed' }}
+                onOpen={onOpen}
+                onFlag={onFlag}
+                gameOver={gameOver}
+              />
+            ))}
           </tr>
-        </thead>
-        <tbody>
-          {items.map(doc => (
-            <tr key={doc.id}>
-              <td className="text-center fw-bold text-primary">{doc.id}</td>
-              <td><strong className="text-dark">{doc.surname} {doc.name}</strong></td>
-              <td>
-                <span className="badge bg-info text-dark">{doc.departmentName || doc.departmentId}</span>
-              </td>
-              <td className="text-end">{Number(doc.salary).toLocaleString('en-US')} UAH</td>
-              <td className="text-end">{Number(doc.premium).toLocaleString('en-US')} UAH</td>
-              <td>
-                {doc.specializations && doc.specializations.length > 0
-                  ? doc.specializations.map(s => (
-                      <span key={s.id} className="badge bg-success me-1 mb-1 d-inline-block">{s.name}</span>
-                    ))
-                  : <span className="text-muted">—</span>
-                }
-              </td>
-              <td className="text-center">
-                <button className="btn btn-sm btn-outline-warning me-2">Edit</button>
-                <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(doc.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
-const emptyForm = { name: '', surname: '', salary: '', premium: '', departmentId: '' };
-
-function AddDoctorModal({ onSaved, onClose }) {
-  const [form, setForm] = useState(emptyForm);
-  const [departments, setDepartments] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    fetch(`${API}/Departments?page=1&size=100`)
-      .then(r => r.json())
-      .then(d => setDepartments(d.items || []))
-      .catch(() => {});
-  }, []);
-
-  const handleChange = e => {
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleSubmit = async () => {
-    if (!form.name.trim() || !form.surname.trim() || !form.departmentId) {
-      setError("Заповніть всі обов'язкові поля");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API}/Doctors`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name,
-          surname: form.surname,
-          salary: parseFloat(form.salary) || 0,
-          premium: parseFloat(form.premium) || 0,
-          departmentId: parseInt(form.departmentId),
-        }),
-      });
-      if (!res.ok) throw new Error(`Помилка: ${res.status}`);
-      onSaved();
-      onClose();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal show d-block" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="modal-dialog">
-        <div className="modal-content">
-          <div className="modal-header">
-            <h5 className="modal-title">Додати лікаря</h5>
-            <button className="btn-close" onClick={onClose} />
-          </div>
-          <div className="modal-body">
-            {error && <div className="alert alert-danger py-2">{error}</div>}
-            <div className="mb-3">
-              <label className="form-label">Ім'я *</label>
-              <input className="form-control" name="name" value={form.name} onChange={handleChange} />
-            </div>
-            <div className="mb-3">
-              <label className="form-label">Прізвище *</label>
-              <input className="form-control" name="surname" value={form.surname} onChange={handleChange} />
-            </div>
-            <div className="mb-3">
-              <label className="form-label">Відділ *</label>
-              <select className="form-select" name="departmentId" value={form.departmentId} onChange={handleChange}>
-                <option value="">— оберіть відділ —</option>
-                {departments.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="mb-3">
-              <label className="form-label">Оклад (грн)</label>
-              <input className="form-control" type="number" name="salary" value={form.salary} onChange={handleChange} />
-            </div>
-            <div className="mb-3">
-              <label className="form-label">Премія (грн)</label>
-              <input className="form-control" type="number" name="premium" value={form.premium} onChange={handleChange} />
-            </div>
-          </div>
-          <div className="modal-footer">
-            <button className="btn btn-secondary" onClick={onClose}>Скасувати</button>
-            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-              {saving ? 'Збереження…' : 'Зберегти'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function App() {
+function HistoryModal({ onClose, onResume }) {
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
   const [pagesCount, setPagesCount] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-
-  const fetchDoctors = async (p, size) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API}/Doctors?page=${p}&size=${size}`);
-      if (!res.ok) throw new Error(`Помилка: ${res.status}`);
-      const data = await res.json();
-      setItems(data.items);
-      setPagesCount(data.pagesCount);
-      setTotalCount(data.totalCount);
-      setPage(data.page);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    fetchDoctors(page, pageSize);
-  }, [page, pageSize]);
+    fetch(`${API}/Minesweeper/history?page=${page}&size=8`)
+      .then(r => r.json())
+      .then(d => { setItems(d.items); setPagesCount(d.pagesCount); });
+  }, [page]);
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Видалити лікаря?')) return;
-    try {
-      await fetch(`${API}/Doctors/${id}`, { method: 'DELETE' });
-      fetchDoctors(page, pageSize);
-    } catch {
-      alert('Помилка видалення');
-    }
-  };
-
-  const handlePageSizeChange = (newSize) => {
-    setPageSize(newSize);
-    setPage(1);
-  };
+  const statusBadge = (s) => ({
+    playing: <span className="badge bg-primary">Грається</span>,
+    won: <span className="badge bg-success">Перемога</span>,
+    lost: <span className="badge bg-danger">Програш</span>,
+  }[s]);
 
   return (
-    <div className="container mt-4">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h2 className="mb-0">Список лікарів</h2>
-        <button className="btn btn-success" onClick={() => setShowModal(true)}>+ Додати лікаря</button>
+    <div className="modal show d-block" style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="modal-dialog modal-lg modal-dialog-centered">
+        <div className="modal-content">
+          <div className="modal-header bg-primary text-white border-0">
+            <h6 className="modal-title fw-bold">Історія ігор</h6>
+            <button className="btn-close btn-close-white" onClick={onClose} />
+          </div>
+          <div className="modal-body p-3">
+            <table className="table table-sm table-hover mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th className="fw-bold">Код</th>
+                  <th className="fw-bold">Поле</th>
+                  <th className="fw-bold">Міни</th>
+                  <th className="fw-bold">Статус</th>
+                  <th className="fw-bold d-none d-sm-table-cell">Дата</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(g => (
+                  <tr key={g.id}>
+                    <td className="fw-bold text-primary"><code>{g.code}</code></td>
+                    <td>{g.rows}×{g.cols}</td>
+                    <td>{g.minesCount}</td>
+                    <td>{statusBadge(g.status)}</td>
+                    <td className="text-muted small d-none d-sm-table-cell">{new Date(g.createdAt).toLocaleString('uk-UA')}</td>
+                    <td>
+                      {g.status === 'playing' && (
+                        <button className="btn btn-sm btn-outline-primary" onClick={() => onResume(g.code)}>
+                          Продовжити
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {pagesCount > 1 && (
+            <div className="modal-footer border-0 justify-content-center">
+              <nav><ul className="pagination pagination-sm mb-0">
+                {Array.from({ length: pagesCount }, (_, i) => (
+                  <li key={i} className={`page-item ${page === i+1 ? 'active' : ''}`}>
+                    <button className="page-link" onClick={() => setPage(i+1)}>{i+1}</button>
+                  </li>
+                ))}
+              </ul></nav>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Minesweeper() {
+  const [rows, setRows] = useState(9);
+  const [cols, setCols] = useState(9);
+  const [mines, setMines] = useState(10);
+  const [code, setCode] = useState('');
+  const [cells, setCells] = useState({});
+  const [gameStatus, setGameStatus] = useState(null);
+  const [flagsLeft, setFlagsLeft] = useState(0);
+  const [gameRows, setGameRows] = useState(0);
+  const [gameCols, setGameCols] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [resumeCode, setResumeCode] = useState('');
+  const [timer, setTimer] = useState(0);
+
+  useEffect(() => {
+    if (gameStatus !== 'playing') return;
+    const t = setInterval(() => setTimer(p => p + 1), 1000);
+    return () => clearInterval(t);
+  }, [gameStatus]);
+
+  const buildCells = (r, c) => {
+    const grid = {};
+    for (let i = 0; i < r; i++) { grid[i] = {}; for (let j = 0; j < c; j++) grid[i][j] = { status: 'closed' }; }
+    return grid;
+  };
+
+  const applyOpened = (grid, openedArr) => {
+    openedArr.forEach(o => { if (grid[o.row]) grid[o.row][o.col] = { status: 'open', number: o.number }; });
+  };
+
+  const applyFlags = (grid, flagsArr) => {
+    flagsArr.forEach(f => { if (grid[f.row] && grid[f.row][f.col]?.status === 'closed') grid[f.row][f.col] = { status: 'flag' }; });
+  };
+
+  const applyMines = (grid, minesArr, lost) => {
+    minesArr?.forEach(m => {
+      if (grid[m.row]) {
+        const cur = grid[m.row][m.col];
+        grid[m.row][m.col] = { status: lost && cur?.status !== 'flag' ? 'mine' : 'mine-safe' };
+      }
+    });
+  };
+
+  const startGame = async () => {
+    setLoading(true);
+    const res = await fetch(`${API}/Minesweeper/new?rows=${rows}&cols=${cols}&mines=${mines}`, { method: 'POST' });
+    const data = await res.json();
+    setCode(data.code);
+    setGameRows(data.rows);
+    setGameCols(data.cols);
+    setFlagsLeft(data.minesCount);
+    setGameStatus('playing');
+    setCells(buildCells(data.rows, data.cols));
+    setTimer(0);
+    setLoading(false);
+  };
+
+  const loadGame = useCallback(async (c) => {
+    setLoading(true);
+    const res = await fetch(`${API}/Minesweeper/${c}`);
+    if (!res.ok) { alert('Гру не знайдено'); setLoading(false); return; }
+    const data = await res.json();
+    const grid = buildCells(data.rows, data.cols);
+    applyOpened(grid, data.opened);
+    applyFlags(grid, data.flags);
+    if (data.status !== 'playing') applyMines(grid, data.mines, data.status === 'lost');
+    setCode(data.code);
+    setGameRows(data.rows);
+    setGameCols(data.cols);
+    setFlagsLeft(data.minesCount - (data.flags?.length || 0));
+    setGameStatus(data.status);
+    setCells({ ...grid });
+    setTimer(0);
+    setLoading(false);
+  }, []);
+
+  const handleOpen = async (row, col) => {
+    const res = await fetch(`${API}/Minesweeper/${code}/open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ row, col, player: 'player1' })
+    });
+    const data = await res.json();
+
+    setCells(prev => {
+      const grid = JSON.parse(JSON.stringify(prev));
+      data.newOpened?.forEach(o => { grid[o.row][o.col] = { status: 'open', number: o.number }; });
+      if (data.status !== 'playing') applyMines(grid, data.mines, data.status === 'lost');
+      return grid;
+    });
+    setGameStatus(data.status);
+  };
+
+  const handleFlag = async (row, col) => {
+    const res = await fetch(`${API}/Minesweeper/${code}/flag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ row, col, player: 'player1' })
+    });
+    const data = await res.json();
+
+    setCells(prev => {
+      const grid = JSON.parse(JSON.stringify(prev));
+      for (let r = 0; r < gameRows; r++)
+        for (let c = 0; c < gameCols; c++)
+          if (grid[r][c]?.status === 'flag') grid[r][c] = { status: 'closed' };
+      applyFlags(grid, data.flags);
+      return grid;
+    });
+    setFlagsLeft(mines - (data.flags?.length || 0));
+  };
+
+  const fmtTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+  return (
+    <div className="bg-body-secondary min-vh-100">
+      <div className="bg-primary text-white py-3 shadow-sm mb-4">
+        <div className="container">
+          <div className="d-flex justify-content-between align-items-center">
+            <h1 className="h4 mb-0 fw-bold">Сапер</h1>
+            <button className="btn btn-outline-light btn-sm fw-semibold"
+              onClick={() => setShowHistory(true)}>Історія</button>
+          </div>
+        </div>
       </div>
 
-      {error && <div className="alert alert-danger">{error}</div>}
+      <div className="container pb-5">
+        <div className="row g-3">
+          <div className="col-lg-3">
+            <div className="card shadow-sm border-0">
+              <div className="card-body p-3">
+                <h6 className="card-title fw-bold mb-3">Нова гра</h6>
 
-      {loading ? (
-        <div className="text-center my-4">
-          <div className="spinner-border" role="status" />
+                <div className="mb-3">
+                  <label className="form-label form-label-sm fw-semibold">Рядків</label>
+                  <input className="form-control form-control-sm" type="number" min={2} max={20}
+                    value={rows} onChange={e => setRows(+e.target.value)} />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label form-label-sm fw-semibold">Стовпців</label>
+                  <input className="form-control form-control-sm" type="number" min={2} max={20}
+                    value={cols} onChange={e => setCols(+e.target.value)} />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label form-label-sm fw-semibold">Мін</label>
+                  <input className="form-control form-control-sm" type="number" min={1} max={rows*cols-1}
+                    value={mines} onChange={e => setMines(+e.target.value)} />
+                </div>
+
+                <button className="btn btn-primary w-100 fw-semibold btn-sm mb-3"
+                  onClick={startGame} disabled={loading}>
+                  {loading ? 'Загрузка...' : 'Почати'}
+                </button>
+
+                <hr className="my-2" />
+
+                <h6 className="fw-bold mb-2 small">Продовжити</h6>
+                <input className="form-control form-control-sm mb-2"
+                  placeholder="Код гри"
+                  value={resumeCode}
+                  onChange={e => setResumeCode(e.target.value.toUpperCase())}
+                />
+                <button className="btn btn-outline-primary btn-sm w-100 fw-semibold"
+                  onClick={() => loadGame(resumeCode)} disabled={!resumeCode}>
+                  Завантажити
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-lg-9">
+            {!gameStatus ? (
+              <div className="card shadow-sm border-0 text-center">
+                <div className="card-body py-5">
+                  <p className="text-muted fw-semibold mb-0">Налаштуй параметри та почни гру</p>
+                </div>
+              </div>
+            ) : (
+              <div className="card shadow-sm border-0">
+                <div className="card-body p-3">
+                  <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div className="d-flex gap-2 align-items-center flex-wrap">
+                      <span className="badge bg-danger"><strong>💣</strong> {flagsLeft}</span>
+                      <span className="badge bg-info"><strong>⏱ </strong>{fmtTime(timer)}</span>
+                      <span className="badge bg-light text-dark"><code>{code}</code></span>
+                    </div>
+
+                    <div>
+                      {gameStatus === 'won' && <span className="badge bg-success">✓ Перемога</span>}
+                      {gameStatus === 'lost' && <span className="badge bg-danger">✗ Програш</span>}
+                      {gameStatus === 'playing' && <span className="badge bg-success">◆ Грається</span>}
+                    </div>
+                  </div>
+
+                  <div className="d-flex justify-content-center mb-3">
+                    <div style={{ overflowX: 'auto' }}>
+                      <Board
+                        rows={gameRows}
+                        cols={gameCols}
+                        cells={cells}
+                        onOpen={handleOpen}
+                        onFlag={handleFlag}
+                        gameOver={gameStatus !== 'playing'}
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-muted small text-center mb-0">
+                    ЛКМ — відкрити · ПКМ — прапорець
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      ) : (
-        <>
-          <Table items={items} onDelete={handleDelete} />
-          <Pagination
-            page={page}
-            pagesCount={pagesCount}
-            onPageChange={setPage}
-            pageSize={pageSize}
-            onPageSizeChange={handlePageSizeChange}
-            totalCount={totalCount}
-          />
-        </>
-      )}
-
-      {showModal && (
-        <AddDoctorModal
-          onSaved={() => fetchDoctors(page, pageSize)}
-          onClose={() => setShowModal(false)}
+      </div>
+      {showHistory && (
+        <HistoryModal
+          onClose={() => setShowHistory(false)}
+          onResume={(c) => { setShowHistory(false); loadGame(c); }}
         />
       )}
     </div>
   );
 }
-
-export default App;
