@@ -1,147 +1,227 @@
-import { useState, useEffect, useCallback } from 'react';
-import { data, replace, Route, Routes, useNavigate, navigate, useLocation } from 'react-router';
+import { useState, useEffect } from 'react';
+import { Routes, Route, useNavigate, Link } from 'react-router-dom';
 
 const API = 'https://localhost:7134/Users';
 
-function IndexPage()
-{
-  const navigate = useNavigate()
+function getToken() { 
+  return localStorage.getItem('token'); 
+}
+function parseJwt(t) { 
+  try { 
+    return JSON.parse(atob(t.split('.')[1])); 
+  } catch { 
+    return null; 
+  } 
+}
+function getRole(t) {
+  const p = parseJwt(t);
+  return p?.['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p?.role ?? '';
+}
+
+function Navbar() {
+  const navigate = useNavigate();
+  const token = getToken();
+  if (!token) return null;
+  return (
+    <div>
+      <Link to="/">Головна</Link>{' | '}
+      {getRole(token) === 'Admin' && <><Link to="/admin">Адмін</Link>{' | '}</>}
+      <button onClick={() => { localStorage.removeItem('token'); navigate('/login'); }}>Вийти</button>
+      <hr />
+    </div>
+  );
+}
+
+function LoginPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => { if (getToken()) navigate('/', { replace: true }); }, []);
+
+  async function submit(e) {
+    e.preventDefault();
+    setErr('');
+    const res = await fetch(`${API}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass }),
+    });
+    if (!res.ok) { setErr('Невірний email або пароль'); return; }
+    localStorage.setItem('token', await res.text());
+    navigate('/', { replace: true });
+  }
+
+  return (
+    <div>
+      <h2>Вхід</h2>
+      {err && <p style={{color:'red'}}>{err}</p>}
+      <form onSubmit={submit}>
+        <div><input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required /></div>
+        <div><input type="password" placeholder="Пароль" value={pass} onChange={e => setPass(e.target.value)} required /></div>
+        <div><button type="submit">Увійти</button></div>
+      </form>
+      <p><Link to="/register">Реєстрація</Link></p>
+    </div>
+  );
+}
+
+function RegisterPage() {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ name:'', email:'', passwordHash:'', birthday:'', gender:'male' });
+  const [err, setErr] = useState('');
+
+  useEffect(() => { if (getToken()) navigate('/', { replace: true }); }, []);
+
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  async function submit(e) {
+    e.preventDefault();
+    setErr('');
+    const res = await fetch(`${API}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 0, ...form }),
+    });
+    if (!res.ok) { setErr('Помилка реєстрації'); return; }
+    navigate('/login', { replace: true });
+  }
+
+  return (
+    <div>
+      <h2>Реєстрація</h2>
+      {err && <p style={{color:'red'}}>{err}</p>}
+      <form onSubmit={submit}>
+        <div><input type="text" placeholder="Імʼя" value={form.name} onChange={set('name')} required /></div>
+        <div><input type="email" placeholder="Email" value={form.email} onChange={set('email')} required /></div>
+        <div><input type="password" placeholder="Пароль" value={form.passwordHash} onChange={set('passwordHash')} required /></div>
+        <div><input type="date" value={form.birthday} onChange={set('birthday')} required /></div>
+        <div>
+          <select value={form.gender} onChange={set('gender')}>
+            <option value="male">Чоловіча</option>
+            <option value="female">Жіноча</option>
+          </select>
+        </div>
+        <div><button type="submit">Зареєструватися</button></div>
+      </form>
+      <p><Link to="/login">Вхід</Link></p>
+    </div>
+  );
+}
+
+function IndexPage() {
+  const navigate = useNavigate();
+  const [me, setMe] = useState(null);
+
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if(token == null)
-    {
-      navigate("/login", {replace: true});
-    }
-    else{
-      fetch(`${API}/me`, {
-        method:"GET",
-        headers: { "Authorization": `Bearer ${token}` }
-      }).then(response => {
-        if (response.status === 401)
-        {
-          localStorage.removeItem("token");
-          navigate("/login", {replace: true})
-        }
+    const token = getToken();
+    if (!token) { navigate('/login', { replace: true }); return; }
+    fetch(`${API}/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => {
+        if (r.status === 401) { localStorage.removeItem('token'); navigate('/login', { replace: true }); return null; }
+        return r.json();
       })
-    }
-  })
+      .then(d => d && setMe(d));
+  }, []);
 
-
-  return(
-    <>
-      <h1>Index</h1>
-    </>
+  if (!me) return <p>Завантаження...</p>;
+  return (
+    <div>
+      <h2>Головна</h2>
+      <p>Імʼя: {me.name}</p>
+      <p>Email: {me.email}</p>
+      <p>Роль: {me.role}</p>
+      <p>Стать: {me.gender}</p>
+      <p>Дата народження: {me.birthday}</p>
+    </div>
   );
 }
 
-function LoginPage()
-{
-  const navigate = useNavigate()
+function AdminPage() {
+  const navigate = useNavigate();
+  const [users, setUsers] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
   useEffect(() => {
-    if(localStorage.getItem("token") != null)
-    {
-      navigate("/", {replace: true});
-    }
-  })
-  function onSubmit(e)
-  {
-    e.preventDefault();
-    let credentials = {
-      "email": document.getElementById("userEmail").value,
-      "password": document.getElementById("userPassword").value,
-    }
-    console.log(credentials)
-    fetch(`${API}/login`, {
-      method:"POST",
-      body: JSON.stringify(credentials),
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }).then(response => response.text()).then(data => {
-      console.log(data);
-      localStorage.setItem("token", data);
-      navigate("/", {replace: true});
-    }).catch(err=>{console.error(err)})
+    const token = getToken();
+    if (!token) { navigate('/login', { replace: true }); return; }
+    if (getRole(token) !== 'Admin') { navigate('/', { replace: true }); return; }
+    fetch(`${API}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setUsers);
+  }, []);
+
+  function startEdit(u) { setEditing(u.id); setEditForm({ ...u }); }
+
+  async function saveEdit() {
+    const token = getToken();
+    await fetch(`${API}/${editForm.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(editForm),
+    });
+    setUsers(u => u.map(x => x.id === editForm.id ? editForm : x));
+    setEditing(null);
   }
 
-  return(
-    <>
-      <h1>Login</h1>
-      <form action="" method='POST' onSubmit={onSubmit}>
-        <input id='userEmail' type='email' placeholder='E-male' />
-        <input id='userPassword' type='password' placeholder='password' />
-        <button type='submit'>Увійти</button>
-      </form>
-    </>
-  );
-}
+  const setF = k => e => setEditForm(f => ({ ...f, [k]: e.target.value }));
 
-function RegistrationPage()
-{
-  const navigate = useNavigate()
-  useEffect(() => {
-    if(localStorage.getItem("token") != null)
-    {
-      navigate("/", {replace: true});
-    }
-  })
-  function onSubmit(e)
-  {
-    e.preventDefault();
-    let credentials = {
-      "id": 0,
-      "name": document.getElementById("userName").value,
-      "email": document.getElementById("userEmail").value,
-      "passwordHash": document.getElementById("userPassword").value,
-      "birthday": document.getElementById("userBirthday").value,
-      "gender": document.getElementById("userGender").value,
-    }
-    console.log(credentials)
-    fetch(`${API}/register`, {
-      method:"POST",
-      body: JSON.stringify(credentials),
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }).then(response => {
-      if (response.status === 200)
-        navigate("/login", {replace: true})})
-    // .then(data => {
-    //   console.log(data);
-    //   // localStorage.setItem("token", data);
-    //   // navigate("/", {replace: true});
-    //   if (data.status === 200)
-    //     navigate("/login", {replace: true})})
-    .catch(err=>{console.error(err)})
-  }
-
-  return(
-    <>
-      <h1>Register</h1>
-      <form action="" method='POST' onSubmit={onSubmit}>
-        <input id='userName' type='text' placeholder='Name' />
-        <input id='userEmail' type='email' placeholder='E-male' />
-        <input id='userPassword' type='password' placeholder='password' />
-        <input id='userBirthday' type="date" />
-        <select id='userGender'>
-          <option value="male">male</option>
-          <option value="female">female</option>
-        </select>
-        <button type='submit'>Увійти</button>
-      </form>
-    </>
+  return (
+    <div>
+      <h2>Адмін-панель</h2>
+      <table border="1" cellPadding="4">
+        <thead>
+          <tr><th>ID</th><th>Імʼя</th><th>Email</th><th>Роль</th><th>Стать</th><th>Дата нар.</th><th></th></tr>
+        </thead>
+        <tbody>
+          {users.map(u => editing === u.id ? (
+            <tr key={u.id}>
+              <td>{u.id}</td>
+              <td><input value={editForm.name}  onChange={setF('name')} /></td>
+              <td><input value={editForm.email} onChange={setF('email')} /></td>
+              <td>
+                <select value={editForm.roles} onChange={setF('roles')}>
+                  <option value="User">User</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </td>
+              <td>
+                <select value={editForm.gender} onChange={setF('gender')}>
+                  <option value="male">male</option>
+                  <option value="female">female</option>
+                </select>
+              </td>
+              <td><input type="date" value={editForm.birthday?.split('T')[0] ?? ''} onChange={setF('birthday')} /></td>
+              <td>
+                <button onClick={saveEdit}>Зберегти</button>{' '}
+                <button onClick={() => setEditing(null)}>Скасувати</button>
+              </td>
+            </tr>
+          ) : (
+            <tr key={u.id}>
+              <td>{u.id}</td><td>{u.name}</td><td>{u.email}</td>
+              <td>{u.roles}</td><td>{u.gender}</td>
+              <td>{u.birthday?.split('T')[0] ?? u.birthday}</td>
+              <td><button onClick={() => startEdit(u)}>Редагувати</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 export default function App() {
-  
   return (
-    <>
+    <div style={{ padding: 16 }}>
+      <Navbar />
       <Routes>
-        <Route path='/' element={<IndexPage />}></Route>
-        <Route path='/login' element={<LoginPage />}></Route>
-        <Route path='/register' element={<RegistrationPage />}></Route>
+        <Route path="/"         element={<IndexPage />} />
+        <Route path="/login"    element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/admin"    element={<AdminPage />} />
       </Routes>
-    </>
+    </div>
   );
 }
